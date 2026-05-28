@@ -55,8 +55,8 @@ if __name__ == "__main__":
     logger.info(f"Loaded wallets: {wallet_manager.wallet_count}")
     logger.info(f"Enabled features: {', '.join([k for k, v in FEATURES.items() if v])}")
 
-    # Можно сразу один прогон сделать при старте
+    # Один прогон сразу при старте
     daily_job()
 
-    # А потом уже по расписанию
+    # А дальше — по расписанию
     setup_scheduler()
