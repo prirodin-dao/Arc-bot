@@ -9,8 +9,10 @@ from modules.nft import nft_handler
 from modules.deploy import deploy_handler
 from modules.domains import domains_handler
 from modules.gm import gm_handler
+from modules.swaps import swap_handler
 from flows.stats import stats
 from modules.utils import delay
+from config import BOT_CONFIG
 import random
 import string
 
@@ -63,6 +65,20 @@ def run_daily_flow():
         gm_ok = gm_handler.send_gm(wallet_index)
         stats.record_operation("gm", gm_ok)
         ok = ok and gm_ok
+
+        # 6) Swap ETH → USDC
+        eth_amount = BOT_CONFIG["SWAP_ETH_AMOUNT"]
+        logger.info(f"💱 Swapping {eth_amount} ETH → USDC...")
+        swap1_ok = swap_handler.swap_eth_to_usdc(wallet_index, eth_amount)
+        stats.record_operation("swap_eth_to_usdc", swap1_ok)
+        ok = ok and swap1_ok
+
+        # 7) Swap USDC → ETH
+        usdc_amount = BOT_CONFIG["SWAP_USDC_AMOUNT"]
+        logger.info(f"💱 Swapping {usdc_amount} USDC → ETH...")
+        swap2_ok = swap_handler.swap_usdc_to_eth(wallet_index, usdc_amount)
+        stats.record_operation("swap_usdc_to_eth", swap2_ok)
+        ok = ok and swap2_ok
 
         # Record wallet result
         stats.record_wallet(ok)
