@@ -1,6 +1,7 @@
 """
-Configuration for Arc Testnet Bot
+Configuration for Arc Testnet Bot (FULL + READY)
 """
+
 import os
 from dotenv import load_dotenv
 
@@ -11,54 +12,52 @@ RPC_URL = "https://rpc.testnet.arc.network"
 CHAIN_ID = 5042002
 EXPLORER_URL = "https://explorer.testnet.arc.network"
 
-# Contract Addresses (Arc Testnet)
+# On‑chain Contracts (из твоего JS‑бота)
 CONTRACTS = {
-    # Faucet URLs
-    "FAUCET_URL": "https://faucet.circle.com/",
-    "CIRCLE_API_FAUCET": "https://api.circle.com/v1/faucet/drips",
-    
     # Tokens
     "USDC": "0x3600000000000000000000000000000000000000",
-    "USDT": "0x2587521Ca49A69813991E9076B6eFbBb5CbfD19E",
-    "USDY": "0x54D12437404aD9a4E7506C4497711b21CCE3ABCd",
-    
-    # StableSwap
-    "STABLE_SWAP_ROUTER": "0xab9743e9715FFb5C5FC11Eb203937edA0C00c105",
-    "STABLE_SWAP_POOL": "0xab9743e9715FFb5C5FC11Eb203937edA0C00c105",
-    
-    # Swap Interfaces (for Curve Finance, defi-on-arc)
-    "CURVE_SWAP": "https://www.curve.finance/dex/arc/swap",
-    "DEFI_SWAP": "https://defi-on-arc.netlify.app/",
-    
-    # NFT Contracts
-    "NFT_OMNIHUB": "http://omnihub.xyz/create",  # NFT creation
-    "NFT_ZKCODEX": "https://zkcodex.com/onchain/memorial",  # NFT minting
-    
-    # Deploy & Domains
-    "ZKCODEX_DEPLOY": "https://zkcodex.com/onchain/deploy",
-    "INFINITY_NAMES": "https://infinityname.com/",
-    
-    # GM
-    "ONCHAIN_GM": "https://onchaingm.com/",
+    "NFT": "0x632176D769aB950bb27cA00fDa81cfcb1886d082",
+    "NAME_REGISTRY": "0x76a816EFa69e3183972ff7a231F5C8d7b065d9De",
+
+    # Swap (заглушки — если нужны реальные, скажи)
+    "ROUTER": "0x0000000000000000000000000000000000000000",
+    "WETH":   "0x0000000000000000000000000000000000000000",
 }
 
-# API Endpoints (for non-browser operations)
-API_ENDPOINTS = {
-    "ZKCODEX_API": "https://api.zkcodex.com",  # If available
-    "GM_API": "https://api.onchaingm.com",  # If available
+# ABI (из твоего JS‑бота)
+ABIS = {
+    "NFT": [
+        "function mint(uint256 amount) external"
+    ],
+    "NAME_REGISTRY": [
+        "function register(string name, address owner) external payable"
+    ],
+    "ERC20": [
+        "function approve(address spender, uint256 amount) external returns (bool)",
+        "function transfer(address to, uint256 amount) external returns (bool)",
+        "function balanceOf(address account) external view returns (uint256)",
+        "function allowance(address owner, address spender) external view returns (uint256)"
+    ],
+    "ROUTER": [
+        "function swapExactTokensForTokens(address pool, bool zeroForOne, uint256 amountIn, uint256 minAmountOut) external returns (uint256)"
+    ]
 }
 
 # Bot Configuration
 BOT_CONFIG = {
-    "MIN_BALANCE": 0.001,  # Minimum ETH/USDC balance required
+    "MIN_BALANCE": 0.001,
     "RETRY_ATTEMPTS": 3,
-    "RETRY_DELAY": 5,  # seconds
-    "WALLET_DELAY": 3,  # delay between wallets in seconds
-    "OPERATION_DELAY": 2,  # delay between operations
-    "REQUEST_TIMEOUT": 30,  # API request timeout
-    "MAX_LOG_SIZE": 1_000_000_000,  # 1GB in bytes
+    "RETRY_DELAY": 5,
+    "WALLET_DELAY": 3,
+    "OPERATION_DELAY": 2,
+    "REQUEST_TIMEOUT": 30,
+    "MAX_LOG_SIZE": 1_000_000_000,
     "LOG_BACKUP_COUNT": 5,
-    "SCHEDULE_TIME": "00:00",  # Daily run time (HH:MM in UTC)
+    "SCHEDULE_TIME": "00:00",
+
+    # 👉 Эти параметры нужны для свапов и будут перезаписаны при запуске
+    "SWAP_ETH_AMOUNT": 0.0005,
+    "SWAP_USDC_AMOUNT": 1,
 }
 
 # Proxy Configuration
@@ -76,7 +75,7 @@ LOG_CONFIG = {
     "DATE_FORMAT": "%Y-%m-%d %H:%M:%S",
 }
 
-# Features to Enable/Disable
+# Features
 FEATURES = {
     "FAUCET": True,
     "SWAPS": True,
@@ -86,7 +85,7 @@ FEATURES = {
     "GM": True,
 }
 
-# Operation Order (priority)
+# Operation Order
 OPERATION_ORDER = [
     "faucet",
     "swaps",
@@ -96,7 +95,7 @@ OPERATION_ORDER = [
     "gm",
 ]
 
-# Activity Timeouts (in seconds)
+# Timeouts
 TIMEOUTS = {
     "faucet": 60,
     "swaps": 120,
@@ -104,21 +103,4 @@ TIMEOUTS = {
     "domains": 90,
     "nft": 120,
     "gm": 45,
-}
-
-# ABI Snippets
-ABIS = {
-    "ERC20": [
-        "function approve(address spender, uint256 amount) public returns (bool)",
-        "function transfer(address to, uint256 amount) public returns (bool)",
-        "function balanceOf(address account) public view returns (uint256)",
-        "function allowance(address owner, address spender) public view returns (uint256)",
-    ],
-    "ROUTER": [
-        "function swapExactTokensForTokens(address pool, bool zeroForOne, uint256 amountIn, uint256 minAmountOut) external returns (uint256)",
-        "function addLiquidity(address pool, uint256 amount0, uint256 amount1, uint256 minLpOut) external returns (uint256)",
-    ],
-    "NFT": [
-        "function mint(uint256 amount) external",
-    ],
 }
