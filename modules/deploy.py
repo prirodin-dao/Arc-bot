@@ -5,18 +5,16 @@ Real token deployment module for ARC Testnet
 from web3 import Web3
 from modules.logger import logger
 from modules.wallet import wallet_manager
-from modules.utils import get_retry_decorator, rate_limiter, delay
+from modules.utils import get_retry_decorator
 from config import CONTRACTS, BOT_CONFIG
 
-TOKEN_BYTECODE = CONTRACTS["TOKEN_BYTECODE"]  # Добавь в config.py
-CREATION_FEE_WEI = int(0.000037 * 1e18)       # 0.000037 ETH как в JS‑боте
+# Добавь TOKEN_BYTECODE в config.py
+TOKEN_BYTECODE = CONTRACTS["TOKEN_BYTECODE"]
+CREATION_FEE_WEI = int(0.000037 * 1e18)  # 0.000037 ETH как в JS‑боте
 
 
 class DeployHandler:
     """Deploy ERC‑20 token on ARC Testnet"""
-
-    def __init__(self):
-        self.timeout = BOT_CONFIG["REQUEST_TIMEOUT"]
 
     @get_retry_decorator(max_attempts=3)
     def deploy_contract(self, wallet_index, name=None, symbol=None, supply=1_000_000):
