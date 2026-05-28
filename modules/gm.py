@@ -1,78 +1,60 @@
 """
-GM module - send daily GM messages on OnchainGM
+OnchainGM module — send GM transaction on ARC Testnet
 """
-from datetime import datetime
+
+from web3 import Web3
 from modules.logger import logger
 from modules.wallet import wallet_manager
-from config import CONTRACTS, BOT_CONFIG, TIMEOUTS
-from modules.utils import get_retry_decorator, delay, rate_limiter
+from modules.utils import get_retry_decorator
+from config import CONTRACTS, ABIS
+
+
+GM_ADDRESS = Web3.to_checksum_address(CONTRACTS["GM_CONTRACT"])
+GM_ABI = ABIS["GM"]
+
 
 class GMHandler:
-    """Handle OnchainGM messages"""
-    
-    def __init__(self):
-        self.gm_url = CONTRACTS["ONCHAIN_GM"]
-        self.timeout = TIMEOUTS.get("gm", 45)
-    
-    @get_retry_decorator(max_attempts=2)
-    def send_gm(self, wallet_index, message=None):
-        """Send GM message on-chain"""
+    """Send GM transaction on OnchainGM contract"""
+
+    @get_retry_decorator(max_attempts=3)
+    def send_gm(self, wallet_index: int):
         try:
-            wallet_address = wallet_manager.get_wallet_address(wallet_index)
-            if not wallet_address:
-                logger.error(f"Wallet {wallet_index} not found")
+            w3 = wallet_manager.get_web3(wallet_index)
+            account = wallet_manager.get_account(wallet_index)
+            address = wallet_manager.get_wallet_address(wallet_index)
+
+            if not w3 or not account:
+                logger.error(f"[Wallet {wallet_index}] Web3/account unavailable")
                 return False
-            
-            if message is None:
-                message = f"GM from wallet {wallet_index} 🌅"
-            
-            logger.info(f"[Wallet {wallet_index}] Sending GM message")
-            logger.info(f"[Wallet {wallet_index}] URL: {self.gm_url}")
-            logger.info(f"[Wallet {wallet_index}] Message: {message}")
-            logger.info(f"[Wallet {wallet_index}] Timestamp: {datetime.utcnow().isoformat()}")
-            
-            rate_limiter.wait()
-            delay(BOT_CONFIG["OPERATION_DELAY"])
-            
+
+            contract = w3.eth.contract(address=GM_ADDRESS, abi=GM_ABI)
+
+            logger.info(f"[Wallet {wallet_index}] Sending GM...")
+
+            nonce = w3.eth.get_transaction_count(address)
+            gas_price = w3.eth.gas_price
+
+            tx = contract.functions.sendGM().build_transaction({
+                "from": address,
+                "nonce": nonce,
+                "gasPrice": gas_price,
+                "gas": 200_000,
+                "chainId": w3.eth.chain_id,
+            })
+
+            signed = w3.eth.account.sign_transaction(tx, account.key)
+            tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+
+            logger.info(f"[Wallet {wallet_index}] TX sent: {tx_hash.hex()}")
+
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+            logger.success(f"[Wallet {wallet_index}] GM sent! Gas used: {receipt.gasUsed}")
+
             return True
-        
+
         except Exception as e:
-            logger.error(f"Error sending GM: {str(e)}")
+            logger.error(f"[Wallet {wallet_index}] GM failed: {e}")
             return False
-    
-    def get_gm_message(self, wallet_index):
-        """Get default GM message"""
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        return f"GM from Arc Testnet Bot - Wallet {wallet_index} - {timestamp} ☀️"
-    
-    def get_gm_info(self, wallet_index):
-        """Get GM operation info"""
-        wallet_address = wallet_manager.get_wallet_address(wallet_index)
-        
-        info = f"""
-╔════════════════════════════════════════════════════════════╗
-║                  👋  ONCHAIN GM INFO                        ║
-╚════════════════════════════════════════════════════════════╝
 
-Wallet #{wallet_index}
-Address: {wallet_address}
 
-Service: OnchainGM
-URL: {self.gm_url}
-
-Operation:
-- Type: Send on-chain message
-- Frequency: Once per day
-- Time: {datetime.utcnow().strftime("%H:%M UTC")}
-
-Message Format:
-GM from Arc Testnet Bot
-Wallet: {wallet_address}
-Timestamp: Auto-generated
-
-════════════════════════════════════════════════════════════
-        """
-        return info
-
-# Global GM handler
 gm_handler = GMHandler()
