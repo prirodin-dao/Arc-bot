@@ -1,77 +1,105 @@
 """
-Faucet module - получение тестовых токенов от Circle Faucet
+Real Circle Faucet integration for ARC Testnet
 """
+
+import time
 import requests
-import asyncio
-import aiohttp
 from modules.logger import logger
 from modules.wallet import wallet_manager
-from config import CONTRACTS, BOT_CONFIG, TIMEOUTS
-from modules.utils import get_retry_decorator, delay, rate_limiter
+from config import CONTRACTS, BOT_CONFIG
+from modules.utils import get_retry_decorator, rate_limiter
+import os
+
 
 class FaucetHandler:
-    """Handle Circle Faucet interactions"""
-    
     def __init__(self):
-        self.faucet_url = CONTRACTS["FAUCET_URL"]
-        self.timeout = TIMEOUTS.get("faucet", 60)
-    
+        self.api_url = CONTRACTS["CIRCLE_API_FAUCET"]
+        self.web_url = CONTRACTS["FAUCET_URL"]
+        self.chain = "ARC_TESTNET"
+        self.api_key = os.getenv("CIRCLE_API_KEY")
+        self.min_balance = BOT_CONFIG["MIN_BALANCE"]
+        self.rate_limit_wait = 1800  # 30 minutes
+
+        self.last_claim_time = {}
+
+    def _can_claim(self, wallet_index):
+        """Check rate limit (30 minutes per wallet)"""
+        last = self.last_claim_time.get(wallet_index)
+        if not last:
+            return True
+
+        elapsed = time.time() - last
+        if elapsed < self.rate_limit_wait:
+            wait_min = int((self.rate_limit_wait - elapsed) / 60)
+            logger.warning(
+                f"[Wallet {wallet_index}] Faucet rate limit active, wait {wait_min} min"
+            )
+            return False
+
+        return True
+
     @get_retry_decorator(max_attempts=3)
     def claim_tokens(self, wallet_index):
-        """Claim tokens from faucet for wallet"""
-        try:
-            wallet_address = wallet_manager.get_wallet_address(wallet_index)
-            if not wallet_address:
-                logger.error(f"Wallet {wallet_index} not found")
-                return False
-            
-            logger.info(f"[Wallet {wallet_index}] Requesting tokens from faucet: {wallet_address}")
-            
-            # Circle Faucet requires manual interaction or API key
-            # For now, we'll log the address and instructions
-            logger.info(f"[Wallet {wallet_index}] Go to: {self.faucet_url}")
-            logger.info(f"[Wallet {wallet_index}] Select: Arc Testnet")
-            logger.info(f"[Wallet {wallet_index}] Enter address: {wallet_address}")
-            logger.info(f"[Wallet {wallet_index}] Click: Send 10 USDC")
-            
-            rate_limiter.wait()
-            return True
-        
-        except Exception as e:
-            logger.error(f"Error claiming tokens from faucet: {str(e)}")
+        """Claim USDC from Circle Faucet"""
+        address = wallet_manager.get_wallet_address(wallet_index)
+        if not address:
+            logger.error(f"[Wallet {wallet_index}] No wallet address")
             return False
-    
-    async def async_claim_tokens(self, wallet_index):
-        """Async claim tokens"""
-        return self.claim_tokens(wallet_index)
-    
-    def get_faucet_instructions(self, wallet_index):
-        """Get faucet instructions for user"""
-        wallet_address = wallet_manager.get_wallet_address(wallet_index)
-        if not wallet_address:
-            return None
-        
-        instructions = f"""
-╔════════════════════════════════════════════════════════════╗
-║                   💧 FAUCET INSTRUCTIONS                    ║
-╚════════════════════════════════════════════════════════════╝
 
-Wallet #{wallet_index}
-Address: {wallet_address}
+        # Check balance
+        balance = wallet_manager.check_balance(wallet_index)
+        if balance > self.min_balance:
+            logger.info(
+                f"[Wallet {wallet_index}] Balance {balance} > {self.min_balance}, skipping faucet"
+            )
+            return True
 
-Steps:
-1. Go to: {self.faucet_url}
-2. Select network: Arc Testnet
-3. Paste address: {wallet_address}
-4. Click "Send 10 USDC"
-5. Wait for confirmation (~1 min)
+        # Check rate limit
+        if not self._can_claim(wallet_index):
+            return False
 
-Rate Limit: 1 request per hour per address
-Amount: 10 USDC + native tokens
+        if not self.api_key:
+            logger.error(
+                f"[Wallet {wallet_index}] No CIRCLE_API_KEY in .env — faucet cannot work automatically"
+            )
+            logger.info(f"Manual faucet URL: {self.web_url}")
+            return False
 
-════════════════════════════════════════════════════════════
-        """
-        return instructions
+        payload = {
+            "address": address,
+            "chain": self.chain,
+        }
 
-# Global faucet handler
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        logger.info(f"[Wallet {wallet_index}] Requesting faucet for {address}")
+
+        rate_limiter.wait()
+
+        try:
+            response = requests.post(
+                self.api_url, json=payload, headers=headers, timeout=30
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                logger.info(
+                    f"[Wallet {wallet_index}] Faucet success: dripId={data.get('data', {}).get('dripId')}"
+                )
+                self.last_claim_time[wallet_index] = time.time()
+                return True
+
+            logger.error(
+                f"[Wallet {wallet_index}] Faucet error {response.status_code}: {response.text}"
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"[Wallet {wallet_index}] Faucet request failed: {e}")
+            return False
+
+
 faucet_handler = FaucetHandler()
