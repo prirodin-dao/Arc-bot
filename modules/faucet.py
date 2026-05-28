@@ -1,5 +1,5 @@
 """
-Real Circle Faucet integration for ARC Testnet
+Real Circle Faucet integration for ARC Testnet - FIXED PROXY LEAK
 """
 
 import time
@@ -23,7 +23,6 @@ class FaucetHandler:
         self.last_claim_time = {}
 
     def _can_claim(self, wallet_index):
-        """Check rate limit (30 minutes per wallet)"""
         last = self.last_claim_time.get(wallet_index)
         if not last:
             return True
@@ -32,7 +31,7 @@ class FaucetHandler:
         if elapsed < self.rate_limit_wait:
             wait_min = int((self.rate_limit_wait - elapsed) / 60)
             logger.warning(
-                f"[Wallet {wallet_index}] Faucet rate limit active, wait {wait_min} min"
+                f"[Wallet {wallet_index + 1}] Faucet rate limit active, wait {wait_min} min"
             )
             return False
 
@@ -40,27 +39,21 @@ class FaucetHandler:
 
     @get_retry_decorator(max_attempts=3)
     def claim_tokens(self, wallet_index):
-        """Claim USDC from Circle Faucet"""
+        """Claim USDC from Circle Faucet via Proxy"""
         address = wallet_manager.get_wallet_address(wallet_index)
-        if not address:
-            logger.error(f"[Wallet {wallet_index}] No wallet address")
-            return False
-
-        # Check balance
-        balance = wallet_manager.check_balance(wallet_index)
-        if balance > self.min_balance:
-            logger.info(
-                f"[Wallet {wallet_index}] Balance {balance} > {self.min_balance}, skipping faucet"
-            )
+        
+        # Сначала проверяем текущий баланс
+        current_bal = wallet_manager.check_balance(wallet_index)
+        if current_bal >= self.min_balance:
+            logger.info(f"[Wallet {wallet_index + 1}] Balance {current_bal} USDC >= Min {self.min_balance}. Faucet skipped.")
             return True
 
-        # Check rate limit
         if not self._can_claim(wallet_index):
             return False
 
         if not self.api_key:
             logger.error(
-                f"[Wallet {wallet_index}] No CIRCLE_API_KEY in .env — faucet cannot work automatically"
+                f"[Wallet {wallet_index + 1}] No CIRCLE_API_KEY in .env — faucet cannot work automatically"
             )
             logger.info(f"Manual faucet URL: {self.web_url}")
             return False
@@ -75,30 +68,34 @@ class FaucetHandler:
             "Authorization": f"Bearer {self.api_key}",
         }
 
-        logger.info(f"[Wallet {wallet_index}] Requesting faucet for {address}")
+        logger.info(f"[Wallet {wallet_index + 1}] Requesting faucet for {address}")
 
         rate_limiter.wait()
 
         try:
+            # КРИТИЧЕСКИЙ ФИКС: Запрос к API крана идет строго через прокси кошелька
+            from modules.proxy_manager import proxy_manager
+            wallet_proxy = proxy_manager.get_requests_proxy(wallet_index)
+
             response = requests.post(
-                self.api_url, json=payload, headers=headers, timeout=30
+                self.api_url, json=payload, headers=headers, proxies=wallet_proxy, timeout=30
             )
 
             if response.status_code == 200:
                 data = response.json()
                 logger.info(
-                    f"[Wallet {wallet_index}] Faucet success: dripId={data.get('data', {}).get('dripId')}"
+                    f"[Wallet {wallet_index + 1}] Faucet success: dripId={data.get('data', {}).get('dripId')}"
                 )
                 self.last_claim_time[wallet_index] = time.time()
                 return True
 
             logger.error(
-                f"[Wallet {wallet_index}] Faucet error {response.status_code}: {response.text}"
+                f"[Wallet {wallet_index + 1}] Faucet error {response.status_code}: {response.text}"
             )
             return False
 
         except Exception as e:
-            logger.error(f"[Wallet {wallet_index}] Faucet request failed: {e}")
+            logger.error(f"[Wallet {wallet_index + 1}] Faucet request failed: {e}")
             return False
 
 
