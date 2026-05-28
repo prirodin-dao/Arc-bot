@@ -1,5 +1,5 @@
 """
-Wallet management module
+Wallet management module - FIXED PROXY & DECIMALS
 """
 import os
 from web3 import Web3
@@ -36,7 +36,6 @@ class WalletManager:
                     continue
                 
                 try:
-                    # Ensure it's a valid hex string
                     if not line.startswith("0x"):
                         line = "0x" + line
                     
@@ -47,105 +46,69 @@ class WalletManager:
                         "address": account.address,
                         "account": account
                     })
-                    logger.debug(f"Loaded wallet {i}: {account.address}")
                 except Exception as e:
-                    logger.error(f"Invalid private key at line {i}: {str(e)}")
+                    logger.error(f"Error loading private key on line {i+1}: {e}")
             
-            logger.info(f"Loaded {len(self.wallets)} wallets")
-        
+            logger.info(f"Successfully loaded {len(self.wallets)} wallets")
         except Exception as e:
-            logger.error(f"Error loading wallets: {str(e)}")
-    
+            logger.error(f"Error loading wallets: {e}")
+
     def load_proxies(self):
         """Load proxies from proxy.txt"""
         try:
             proxy_file = PROXY_CONFIG["PROXY_FILE"]
-            
             if not os.path.exists(proxy_file):
-                logger.warning(f"Proxy file not found: {proxy_file}, running without proxies")
+                logger.warning(f"Proxy file not found: {proxy_file}. Running without proxies.")
                 return
             
             with open(proxy_file, "r") as f:
                 lines = f.readlines()
             
-            for i, line in enumerate(lines):
+            for line in lines:
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    # Format: ip:port or ip:port:user:pass
+                    if not line.startswith("http://") and not line.startswith("https://"):
+                        line = "http://" + line
                     self.proxies.append(line)
-                    logger.debug(f"Loaded proxy {i}: {line}")
-            
-            logger.info(f"Loaded {len(self.proxies)} proxies")
-        
+                    
+            logger.info(f"Successfully loaded {len(self.proxies)} proxies")
         except Exception as e:
-            logger.error(f"Error loading proxies: {str(e)}")
-    
-    def get_proxy(self, wallet_index):
-        """Get proxy for wallet (round-robin)"""
-        if not self.proxies:
-            return None
-        
-        proxy = self.proxies[wallet_index % len(self.proxies)]
-        
-        # Parse proxy format
-        if "@" in proxy:
-            # Format: user:pass@ip:port
-            auth, host = proxy.split("@")
-            user, password = auth.split(":")
-            ip, port = host.split(":")
-            return {
-                "http": f"http://{user}:{password}@{ip}:{port}",
-                "https": f"http://{user}:{password}@{ip}:{port}"
-            }
-        else:
-            # Format: ip:port or ip:port:user:pass
-            parts = proxy.split(":")
-            if len(parts) == 2:
-                ip, port = parts
-                return {
-                    "http": f"http://{ip}:{port}",
-                    "https": f"http://{ip}:{port}"
-                }
-            elif len(parts) >= 4:
-                ip, port, user, password = parts[0], parts[1], parts[2], parts[3]
-                return {
-                    "http": f"http://{user}:{password}@{ip}:{port}",
-                    "https": f"http://{user}:{password}@{ip}:{port}"
-                }
-        
-        return None
+            logger.error(f"Error loading proxies: {e}")
     
     def get_web3(self, wallet_index):
-        """Get Web3 instance for wallet"""
+        """Get Web3 instance with strict proxy enforcement for v7.0.0"""
         try:
-            proxy = self.get_proxy(wallet_index)
-            
-            if proxy:
-                logger.debug(f"Using proxy for wallet {wallet_index}")
-                # Note: Web3.py doesn't directly support proxies via HTTPProvider
-                # We'll use requests session with proxy for custom requests
-                return Web3(Web3.HTTPProvider(self.rpc_url))
+            if PROXY_CONFIG["USE_PROXIES"] and self.proxies:
+                proxy = self.proxies[wallet_index % len(self.proxies)]
+                
+                # КРИТИЧЕСКИЙ ФИКС: В Web3 v7 прокси передаются строго внутрь HTTPProvider
+                provider = Web3.HTTPProvider(
+                    self.rpc_url,
+                    request_kwargs={
+                        "proxies": {"http": proxy, "https": proxy},
+                        "timeout": 30
+                    }
+                )
+                return Web3(provider)
             else:
                 return Web3(Web3.HTTPProvider(self.rpc_url))
         
         except Exception as e:
-            logger.error(f"Error creating Web3 instance: {str(e)}")
+            logger.error(f"Error creating Web3 instance for wallet {wallet_index}: {str(e)}")
             return None
     
     def get_account(self, wallet_index):
-        """Get account for wallet"""
         if wallet_index < len(self.wallets):
             return self.wallets[wallet_index]["account"]
         return None
     
     def get_wallet_address(self, wallet_index):
-        """Get wallet address"""
         if wallet_index < len(self.wallets):
             return self.wallets[wallet_index]["address"]
         return None
     
     def check_balance(self, wallet_index):
-        """Check wallet balance"""
+        """Check wallet balance (Native USDC on Arc Testnet)"""
         try:
             w3 = self.get_web3(wallet_index)
             if not w3:
@@ -153,19 +116,19 @@ class WalletManager:
             
             address = self.get_wallet_address(wallet_index)
             balance_wei = w3.eth.get_balance(address)
-            balance_eth = Web3.from_wei(balance_wei, "ether")
             
-            logger.debug(f"Wallet {wallet_index} balance: {balance_eth} ETH")
-            return float(balance_eth)
+            # КРИТИЧЕСКИЙ ФИКС: Деление на 10**6, так как токен газа — USDC с 6 знаками
+            balance_usdc = balance_wei / 10**6
+            
+            logger.debug(f"Wallet {wallet_index + 1} balance: {balance_usdc} USDC")
+            return float(balance_usdc)
         
         except Exception as e:
-            logger.error(f"Error checking balance for wallet {wallet_index}: {str(e)}")
+            logger.error(f"Error checking balance for wallet {wallet_index + 1}: {str(e)}")
             return 0
     
     @property
     def wallet_count(self):
-        """Get number of loaded wallets"""
         return len(self.wallets)
 
-# Global wallet manager
 wallet_manager = WalletManager()
