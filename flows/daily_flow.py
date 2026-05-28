@@ -32,20 +32,26 @@ def run_daily_flow():
 
         ok = True
 
-        # 1) Faucet if needed
+        # ---------------------------------------------------------
+        # 1) Faucet
+        # ---------------------------------------------------------
         logger.info("💧 Checking faucet...")
         faucet_ok = faucet_handler.claim_tokens(wallet_index)
         stats.record_operation("faucet", faucet_ok)
         if not faucet_ok:
             logger.warn("Faucet failed or skipped")
 
+        # ---------------------------------------------------------
         # 2) Mint NFT
+        # ---------------------------------------------------------
         logger.info("🖼 Minting NFT...")
         nft_ok = nft_handler.mint_nft(wallet_index, amount=1)
         stats.record_operation("nft", nft_ok)
         ok = ok and nft_ok
 
+        # ---------------------------------------------------------
         # 3) Deploy token
+        # ---------------------------------------------------------
         logger.info("🪙 Deploying token...")
         token_name = f"Token{random_string(4)}"
         token_symbol = f"T{random_string(3).upper()}"
@@ -53,34 +59,35 @@ def run_daily_flow():
         stats.record_operation("deploy", deploy_ok)
         ok = ok and deploy_ok
 
+        # ---------------------------------------------------------
         # 4) Register domain
+        # ---------------------------------------------------------
         logger.info("🌐 Registering domain...")
         domain = f"arc{random_string(6)}"
         domain_ok = domains_handler.register_domain(wallet_index, domain)
         stats.record_operation("domain", domain_ok)
         ok = ok and domain_ok
 
+        # ---------------------------------------------------------
         # 5) Send GM
+        # ---------------------------------------------------------
         logger.info("👋 Sending GM...")
         gm_ok = gm_handler.send_gm(wallet_index)
         stats.record_operation("gm", gm_ok)
         ok = ok and gm_ok
 
-        # 6) Swap ETH → USDC
-        eth_amount = BOT_CONFIG["SWAP_ETH_AMOUNT"]
-        logger.info(f"💱 Swapping {eth_amount} ETH → USDC...")
-        swap1_ok = swap_handler.swap_eth_to_usdc(wallet_index, eth_amount)
-        stats.record_operation("swap_eth_to_usdc", swap1_ok)
-        ok = ok and swap1_ok
-
-        # 7) Swap USDC → ETH
+        # ---------------------------------------------------------
+        # 6) Swap USDC → EURC (REAL Arc Testnet swap)
+        # ---------------------------------------------------------
         usdc_amount = BOT_CONFIG["SWAP_USDC_AMOUNT"]
-        logger.info(f"💱 Swapping {usdc_amount} USDC → ETH...")
-        swap2_ok = swap_handler.swap_usdc_to_eth(wallet_index, usdc_amount)
-        stats.record_operation("swap_usdc_to_eth", swap2_ok)
-        ok = ok and swap2_ok
+        logger.info(f"💱 Swapping {usdc_amount} USDC → EURC...")
+        swap_ok = swap_handler.swap_usdc_to_eurc(wallet_index, usdc_amount)
+        stats.record_operation("swap_usdc_to_eurc", swap_ok)
+        ok = ok and swap_ok
 
+        # ---------------------------------------------------------
         # Record wallet result
+        # ---------------------------------------------------------
         stats.record_wallet(ok)
 
         if ok:
