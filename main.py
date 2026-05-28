@@ -55,15 +55,12 @@ if __name__ == "__main__":
     logger.info(f"Loaded wallets: {wallet_manager.wallet_count}")
     logger.info(f"Enabled features: {', '.join([k for k, v in FEATURES.items() if v])}")
 
-    # 👉 ВСЕГДА спрашиваем параметры свапов при запуске
+    # 👉 Теперь спрашиваем ТОЛЬКО USDC → EURC
     try:
-        eth_amount = float(input("Введите сумму ETH для свапа ETH → USDC: "))
-        usdc_amount = float(input("Введите сумму USDC для свапа USDC → ETH: "))
-
-        BOT_CONFIG["SWAP_ETH_AMOUNT"] = eth_amount
+        usdc_amount = float(input("Введите сумму USDC для свапа USDC → EURC: "))
         BOT_CONFIG["SWAP_USDC_AMOUNT"] = usdc_amount
 
-        logger.info(f"Swap settings: ETH→USDC={eth_amount}, USDC→ETH={usdc_amount}")
+        logger.info(f"Swap settings: USDC→EURC={usdc_amount}")
 
     except Exception as e:
         logger.error(f"Ошибка ввода параметров свапов: {e}")
