@@ -1,72 +1,79 @@
 """
-Daily flow: прогон всех кошельков по всем операциям в нужном порядке
+Daily automated flow — full AUTO‑ALL for ARC Testnet
 """
 
-import time
-
-from config import BOT_CONFIG, FEATURES, OPERATION_ORDER
 from modules.logger import logger
 from modules.wallet import wallet_manager
 from modules.faucet import faucet_handler
-from modules.swaps import swap_handler
+from modules.nft import nft_handler
 from modules.deploy import deploy_handler
 from modules.domains import domains_handler
-from modules.nft import nft_handler
 from modules.gm import gm_handler
+from flows.stats import stats
+from modules.utils import delay
+import random
+import string
 
 
-OPERATION_MAP = {
-    "faucet": lambda idx: faucet_handler.claim_tokens(idx),
-    "swaps": lambda idx: swap_handler.swap_tokens(idx),
-    "deploy": lambda idx: deploy_handler.deploy_contract(idx),
-    "domains": lambda idx: domains_handler.register_domain(idx),
-    "nft": lambda idx: (
-        nft_handler.create_nft(idx) and nft_handler.mint_nft(idx)
-    ),
-    "gm": lambda idx: gm_handler.send_gm(idx),
-}
-
-
-def run_operations_for_wallet(wallet_index: int):
-    """Выполнить все включённые операции для одного кошелька"""
-    address = wallet_manager.get_wallet_address(wallet_index)
-    logger.banner(f"👛 Wallet #{wallet_index} | {address}")
-
-    for op in OPERATION_ORDER:
-        if not FEATURES.get(op.upper(), True):
-            logger.info(f"[Wallet {wallet_index}] Skipping {op} (disabled in config)")
-            continue
-
-        handler = OPERATION_MAP.get(op)
-        if not handler:
-            logger.warning(f"[Wallet {wallet_index}] No handler for operation: {op}")
-            continue
-
-        logger.info(f"[Wallet {wallet_index}] ▶ Starting operation: {op}")
-        try:
-            ok = handler(wallet_index)
-            if ok:
-                logger.info(f"[Wallet {wallet_index}] ✅ Operation {op} completed")
-            else:
-                logger.warning(f"[Wallet {wallet_index}] ⚠ Operation {op} failed/was skipped")
-        except Exception as e:
-            logger.error(f"[Wallet {wallet_index}] ❌ Error in {op}: {e}")
-
-        time.sleep(BOT_CONFIG["OPERATION_DELAY"])
+def random_string(length=6):
+    return ''.join(random.choice(string.ascii_lowercase) for _ in range(length))
 
 
 def run_daily_flow():
-    """Основной дневной цикл по всем кошелькам"""
-    total = wallet_manager.wallet_count
-    logger.info(f"Starting daily flow for {total} wallets")
+    logger.banner("🚀 DAILY AUTO‑ALL STARTED")
 
-    for idx in range(total):
-        try:
-            run_operations_for_wallet(idx)
-        except Exception as e:
-            logger.error(f"[Wallet {idx}] Fatal error, skipping wallet: {e}")
+    total_wallets = wallet_manager.wallet_count
+    logger.info(f"Loaded wallets: {total_wallets}")
 
-        # Пауза между кошельками
-        time.sleep(BOT_CONFIG["WALLET_DELAY"])
+    for wallet_index in range(total_wallets):
+        logger.banner(f"🟦 Wallet {wallet_index + 1}/{total_wallets}")
 
-    logger.info("Daily flow finished for all wallets")
+        ok = True
+
+        # 1) Faucet if needed
+        logger.info("💧 Checking faucet...")
+        faucet_ok = faucet_handler.claim_tokens(wallet_index)
+        stats.record_operation("faucet", faucet_ok)
+        if not faucet_ok:
+            logger.warn("Faucet failed or skipped")
+
+        # 2) Mint NFT
+        logger.info("🖼 Minting NFT...")
+        nft_ok = nft_handler.mint_nft(wallet_index, amount=1)
+        stats.record_operation("nft", nft_ok)
+        ok = ok and nft_ok
+
+        # 3) Deploy token
+        logger.info("🪙 Deploying token...")
+        token_name = f"Token{random_string(4)}"
+        token_symbol = f"T{random_string(3).upper()}"
+        deploy_ok = deploy_handler.deploy_contract(wallet_index, token_name, token_symbol, 1_000_000)
+        stats.record_operation("deploy", deploy_ok)
+        ok = ok and deploy_ok
+
+        # 4) Register domain
+        logger.info("🌐 Registering domain...")
+        domain = f"arc{random_string(6)}"
+        domain_ok = domains_handler.register_domain(wallet_index, domain)
+        stats.record_operation("domain", domain_ok)
+        ok = ok and domain_ok
+
+        # 5) Send GM
+        logger.info("👋 Sending GM...")
+        gm_ok = gm_handler.send_gm(wallet_index)
+        stats.record_operation("gm", gm_ok)
+        ok = ok and gm_ok
+
+        # Record wallet result
+        stats.record_wallet(ok)
+
+        if ok:
+            logger.success(f"✅ Wallet {wallet_index + 1} completed all operations")
+        else:
+            logger.error(f"❌ Wallet {wallet_index + 1} had errors")
+
+        # Delay between wallets
+        delay(3)
+
+    logger.banner("🎉 DAILY AUTO‑ALL COMPLETED")
+    stats.print_summary()
