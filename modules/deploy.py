@@ -1,72 +1,80 @@
 """
-Deploy module - smart contract deployment via zkcodex
+Real token deployment module for ARC Testnet
 """
-import requests
-import json
+
+from web3 import Web3
 from modules.logger import logger
 from modules.wallet import wallet_manager
-from config import CONTRACTS, BOT_CONFIG, TIMEOUTS
-from modules.utils import get_retry_decorator, delay, rate_limiter
+from modules.utils import get_retry_decorator, rate_limiter, delay
+from config import CONTRACTS, BOT_CONFIG
+
+TOKEN_BYTECODE = CONTRACTS["TOKEN_BYTECODE"]  # Добавь в config.py
+CREATION_FEE_WEI = int(0.000037 * 1e18)       # 0.000037 ETH как в JS‑боте
+
 
 class DeployHandler:
-    """Handle smart contract deployments"""
-    
+    """Deploy ERC‑20 token on ARC Testnet"""
+
     def __init__(self):
-        self.deploy_url = CONTRACTS["ZKCODEX_DEPLOY"]
-        self.timeout = TIMEOUTS.get("deploy", 180)
-    
+        self.timeout = BOT_CONFIG["REQUEST_TIMEOUT"]
+
     @get_retry_decorator(max_attempts=3)
-    def deploy_contract(self, wallet_index, contract_name=None, params=None):
-        """Deploy a contract"""
+    def deploy_contract(self, wallet_index, name=None, symbol=None, supply=1_000_000):
         try:
-            wallet_address = wallet_manager.get_wallet_address(wallet_index)
-            if not wallet_address:
-                logger.error(f"Wallet {wallet_index} not found")
+            w3 = wallet_manager.get_web3(wallet_index)
+            account = wallet_manager.get_account(wallet_index)
+            address = wallet_manager.get_wallet_address(wallet_index)
+
+            if not w3 or not account:
+                logger.error(f"[Wallet {wallet_index}] Web3/account unavailable")
                 return False
-            
-            if contract_name is None:
-                contract_name = f"TestToken_{wallet_index}"
-            
-            logger.info(f"[Wallet {wallet_index}] Deploying contract: {contract_name}")
-            logger.info(f"[Wallet {wallet_index}] From address: {wallet_address}")
-            logger.info(f"[Wallet {wallet_index}] Deploy URL: {self.deploy_url}")
-            
-            # Log deployment details
-            logger.debug(f"[Wallet {wallet_index}] Parameters: {params}")
-            
-            rate_limiter.wait()
-            delay(BOT_CONFIG["OPERATION_DELAY"])
-            
-            return True
-        
+
+            # Defaults
+            if name is None:
+                name = f"Token{wallet_index}"
+            if symbol is None:
+                symbol = f"T{wallet_index}"
+
+            logger.info(f"[Wallet {wallet_index}] Deploying token {name} ({symbol})")
+
+            # Encode constructor params
+            encoded = w3.codec.encode_abi(
+                ["string", "string", "uint256"],
+                [name, symbol, Web3.to_wei(supply, "ether")]
+            )
+
+            # Build final bytecode
+            deploy_data = TOKEN_BYTECODE + encoded.hex()
+
+            nonce = w3.eth.get_transaction_count(address)
+            gas_price = w3.eth.gas_price
+
+            tx = {
+                "from": address,
+                "nonce": nonce,
+                "gasPrice": gas_price,
+                "gas": 1_500_000,
+                "value": CREATION_FEE_WEI,
+                "data": deploy_data,
+                "chainId": w3.eth.chain_id,
+            }
+
+            signed = w3.eth.account.sign_transaction(tx, account.key)
+            tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+
+            logger.info(f"[Wallet {wallet_index}] TX sent: {tx_hash.hex()}")
+
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            contract_address = receipt.contractAddress
+            logger.success(f"[Wallet {wallet_index}] Token deployed at: {contract_address}")
+            logger.info(f"[Wallet {wallet_index}] Gas used: {receipt.gasUsed}")
+
+            return contract_address
+
         except Exception as e:
-            logger.error(f"Error deploying contract: {str(e)}")
+            logger.error(f"[Wallet {wallet_index}] Deploy failed: {e}")
             return False
-    
-    def get_deployment_info(self, wallet_index):
-        """Get deployment information"""
-        wallet_address = wallet_manager.get_wallet_address(wallet_index)
-        
-        info = f"""
-╔════════════════════════════════════════════════════════════╗
-║               🏗️  CONTRACT DEPLOYMENT INFO                 ║
-╚════════════════════════════════════════════════════════════╝
 
-Wallet #{wallet_index}
-Address: {wallet_address}
 
-Deploy URL: {self.deploy_url}
-Network: Arc Testnet (5042002)
-
-Standard Parameters:
-- Name: TestToken_{wallet_index}
-- Symbol: TT{wallet_index}
-- Supply: 1,000,000
-- Decimals: 18
-
-════════════════════════════════════════════════════════════
-        """
-        return info
-
-# Global deploy handler
 deploy_handler = DeployHandler()
